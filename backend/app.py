@@ -20,20 +20,15 @@ from database import (
     registrar_lote,
     registrar_movimiento,
     resumen_inventario,
+    verificar_login,
 )
 
 app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-USER_PATH = os.path.join(BASE_DIR, "user.json")
 
 init_db()
-
-
-def lista_admin():
-    with open(USER_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def validar_producto(data):
@@ -69,11 +64,9 @@ def login():
     data = request.get_json()
     usuario = data.get("usuario")
     password = data.get("password")
-    usuarios = lista_admin()
 
-    for x in usuarios:
-        if x["usuario"] == usuario and x["password"] == password:
-            return jsonify({"message": "Login correcto"}), 200
+    if verificar_login(usuario, password):
+        return jsonify({"message": "Login correcto"}), 200
 
     return jsonify({"message": "Login incorrecto"}), 401
 

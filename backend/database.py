@@ -35,6 +35,31 @@ def init_db():
     conn = get_connection()
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL UNIQUE
+        )
+        """
+    )
+    conn.execute("INSERT OR IGNORE INTO roles (id, nombre) VALUES (1, 'Administrador')")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            usuario TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            rol_id INTEGER NOT NULL,
+            activo INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (rol_id) REFERENCES roles(id)
+        )
+        """
+    )
+    conn.execute("INSERT OR IGNORE INTO usuarios (usuario, nombre, password_hash, rol_id) VALUES ('admin', 'Administrador', '123', 1)")
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS categorias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT NOT NULL UNIQUE
@@ -693,3 +718,13 @@ def historial_movimientos(producto_id=None, limite=100):
     movimientos = [dict(row) for row in conn.execute(sql, params)]
     conn.close()
     return movimientos
+
+
+def verificar_login(usuario, password):
+    conn = get_connection()
+    user = conn.execute(
+        "SELECT * FROM usuarios WHERE usuario = ? AND password_hash = ? AND activo = 1",
+        (usuario, password)
+    ).fetchone()
+    conn.close()
+    return user is not None
