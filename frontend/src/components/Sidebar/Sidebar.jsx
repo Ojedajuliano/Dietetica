@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import './Sidebar.css'
 
@@ -40,7 +40,7 @@ const Sidebar = () => {
             </div>
           </div>
           <NavLink to="/compra-venta">Compra Venta</NavLink>
-          <NavLink to="/historial">Historial</NavLink>
+          {/* <NavLink to="/historial">Historial</NavLink> */}
           <NavLink to="/administracion">Administracion</NavLink>
         </nav>
       </aside>

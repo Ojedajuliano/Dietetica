@@ -31,7 +31,7 @@ function App() {
             <Route path='/movimientos' element={<Movimientos />} />
             <Route path='/vencimiento' element={<Vencimiento />} />
             <Route path='/compra-venta' element={<CompraVenta />} />
-            <Route path='/historial' element={<Historial />} />
+            {/* <Route path='/historial' element={<Historial />} /> */}
             <Route path='/administracion' element={<Administracion />} />
             <Route path='/Panel' element={<Panel />} />
           </Routes>
