@@ -1,4 +1,8 @@
 .sidebar {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  flex: 0 0 250px;
   width: 250px;
   height: 100vh;
   background-color: #F8FAFC;
@@ -64,5 +68,3 @@
   text-decoration: none;
   margin-top: 20px;
 }
-
-

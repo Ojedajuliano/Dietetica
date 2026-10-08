@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "./NuevoProducto.css";
-import { actualizarProducto, crearProducto, getCategorias, getProducto } from "../../api/productos";
+import {
+  actualizarProducto,
+  crearCategoria,
+  crearMarca,
+  crearProducto,
+  getCategorias,
+  getMarcas,
+  getProducto,
+} from "../../api/productos";
 
 const VACIO = {
   nombre: "",
@@ -22,13 +30,23 @@ const NuevoProducto = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState(VACIO);
   const [categorias, setCategorias] = useState([]);
+  const [marcas, setMarcas] = useState([]);
+  const [nuevaCategoria, setNuevaCategoria] = useState("");
+  const [nuevaMarca, setNuevaMarca] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [guardandoCategoria, setGuardandoCategoria] = useState(false);
+  const [guardandoMarca, setGuardandoMarca] = useState(false);
   const esEdicion = Boolean(id);
 
   useEffect(() => {
-    getCategorias().then(setCategorias).catch(() => setCategorias([]));
+    Promise.all([getCategorias(), getMarcas()])
+      .then(([listaCategorias, listaMarcas]) => {
+        setCategorias(listaCategorias);
+        setMarcas(listaMarcas);
+      })
+      .catch((e) => setError(e.message));
   }, []);
 
   useEffect(() => {
@@ -56,6 +74,40 @@ const NuevoProducto = () => {
   const onChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleCrearCategoria = async () => {
+    setError("");
+    setMensaje("");
+    setGuardandoCategoria(true);
+    try {
+      const creada = await crearCategoria(nuevaCategoria);
+      setCategorias((actuales) => [...actuales, creada.nombre].sort((a, b) => a.localeCompare(b)));
+      setForm((actual) => ({ ...actual, categoria: creada.nombre }));
+      setNuevaCategoria("");
+      setMensaje("Categoría guardada");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGuardandoCategoria(false);
+    }
+  };
+
+  const handleCrearMarca = async () => {
+    setError("");
+    setMensaje("");
+    setGuardandoMarca(true);
+    try {
+      const creada = await crearMarca(nuevaMarca);
+      setMarcas((actuales) => [...actuales, creada.nombre].sort((a, b) => a.localeCompare(b)));
+      setForm((actual) => ({ ...actual, marca: creada.nombre }));
+      setNuevaMarca("");
+      setMensaje("Marca guardada");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGuardandoMarca(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -110,7 +162,7 @@ const NuevoProducto = () => {
             <input
               name="nombre"
               type="text"
-              placeholder="Ej: Proteína Whey 900gr"
+              placeholder="Ej: Proteína Whey"
               value={form.nombre}
               onChange={onChange}
               required
@@ -120,13 +172,28 @@ const NuevoProducto = () => {
           <div className="campos-form">
             <div className="campo-grupo">
               <label>Marca</label>
-              <input
-                name="marca"
-                type="text"
-                placeholder="Ej: Star Nutrition"
-                value={form.marca}
-                onChange={onChange}
-              />
+              <select name="marca" value={form.marca} onChange={onChange}>
+                <option value="">Seleccione una marca</option>
+                {marcas.map((marca) => (
+                  <option key={marca} value={marca}>{marca}</option>
+                ))}
+              </select>
+              <div className="agregar-categoria">
+                <input
+                  type="text"
+                  aria-label="Nueva marca"
+                  placeholder="Nueva marca"
+                  value={nuevaMarca}
+                  onChange={(e) => setNuevaMarca(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={handleCrearMarca}
+                  disabled={guardandoMarca || !nuevaMarca.trim()}
+                >
+                  {guardandoMarca ? "Guardando..." : "Agregar"}
+                </button>
+              </div>
             </div>
             <div className="campo-grupo">
               <label>Categoría</label>
@@ -136,6 +203,22 @@ const NuevoProducto = () => {
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+              <div className="agregar-categoria">
+                <input
+                  type="text"
+                  aria-label="Nueva categoría"
+                  placeholder="Nueva categoría"
+                  value={nuevaCategoria}
+                  onChange={(e) => setNuevaCategoria(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={handleCrearCategoria}
+                  disabled={guardandoCategoria || !nuevaCategoria.trim()}
+                >
+                  {guardandoCategoria ? "Guardando..." : "Agregar"}
+                </button>
+              </div>
             </div>
             <div className="campo-grupo">
               <label>Proveedor</label>
@@ -217,17 +300,6 @@ const NuevoProducto = () => {
                 min="0"
                 step={form.tipo_venta === "peso" ? "0.01" : "1"}
                 value={form.stock_minimo}
-                onChange={onChange}
-              />
-            </div>
-            <div className="campo-grupo">
-              <label>Stock crítico</label>
-              <input
-                name="stock_critico"
-                type="number"
-                min="0"
-                step={form.tipo_venta === "peso" ? "0.01" : "1"}
-                value={form.stock_critico}
                 onChange={onChange}
               />
             </div>

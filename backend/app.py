@@ -8,12 +8,15 @@ from database import (
     actualizar_producto,
     actualizar_precios,
     actualizar_stock,
+    crear_categoria,
+    crear_marca,
     crear_producto,
     eliminar_producto,
     historial_movimientos,
     init_db,
     listar_lotes,
     listar_categorias,
+    listar_marcas,
     listar_productos,
     listar_proveedores,
     obtener_producto,
@@ -74,6 +77,37 @@ def login():
 @app.route("/api/categorias", methods=["GET"])
 def api_categorias():
     return jsonify(listar_categorias())
+
+
+@app.route("/api/categorias", methods=["POST"])
+def api_crear_categoria():
+    data = request.get_json(silent=True) or {}
+    nombre = data.get("nombre")
+    if not isinstance(nombre, str) or not nombre.strip():
+        return jsonify({"message": "El nombre de la categoría es obligatorio"}), 400
+    try:
+        categoria = crear_categoria(nombre)
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 409
+    return jsonify({"nombre": categoria}), 201
+
+
+@app.route("/api/marcas", methods=["GET"])
+def api_marcas():
+    return jsonify(listar_marcas())
+
+
+@app.route("/api/marcas", methods=["POST"])
+def api_crear_marca():
+    data = request.get_json(silent=True) or {}
+    nombre = data.get("nombre")
+    if not isinstance(nombre, str) or not nombre.strip():
+        return jsonify({"message": "El nombre de la marca es obligatorio"}), 400
+    try:
+        marca = crear_marca(nombre)
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 409
+    return jsonify({"nombre": marca}), 201
 
 
 @app.route("/api/inventario/resumen", methods=["GET"])

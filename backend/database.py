@@ -84,6 +84,22 @@ def init_db():
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS marcas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL UNIQUE COLLATE NOCASE
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO marcas (nombre)
+        SELECT DISTINCT trim(marca)
+        FROM productos
+        WHERE marca IS NOT NULL AND trim(marca) != ''
+        """
+    )
     columnas = _columnas(conn, "productos")
     campos_nuevos = {
         "categoria": "TEXT NOT NULL DEFAULT ''",
@@ -484,6 +500,19 @@ def resumen_inventario():
     productos = listar_productos()
     hoy = date.today().isoformat()
     limite = (date.today() + timedelta(days=30)).isoformat()
+    conn = get_connection()
+    valores = conn.execute(
+        """
+        SELECT
+            ROUND(COALESCE(SUM(COALESCE(stock, 0) * COALESCE(costo, 0)), 0), 2)
+                AS valor_costo,
+            ROUND(COALESCE(SUM(COALESCE(stock, 0) * COALESCE(precio_venta, 0)), 0), 2)
+                AS valor_venta
+        FROM productos
+        WHERE COALESCE(activo, 1) = 1
+        """
+    ).fetchone()
+    conn.close()
     return {
         "total_productos": len(productos),
         "sin_stock": sum(1 for p in productos if p["estado_stock"] == "sin_stock"),
@@ -493,8 +522,8 @@ def resumen_inventario():
             1 for p in productos
             if p["proximo_vencimiento"] and hoy <= p["proximo_vencimiento"][:10] <= limite
         ),
-        "valor_costo": round(sum(p["stock"] * p["costo"] for p in productos), 2),
-        "valor_venta": round(sum(p["stock"] * p["precio_venta"] for p in productos), 2),
+        "valor_costo": valores["valor_costo"],
+        "valor_venta": valores["valor_venta"],
     }
 
 
@@ -518,6 +547,60 @@ def listar_categorias():
     ]
     conn.close()
     return categorias
+
+
+def crear_categoria(nombre):
+    nombre = (nombre or "").strip()
+    if not nombre:
+        raise ValueError("El nombre de la categoría es obligatorio")
+
+    conn = get_connection()
+    existente = conn.execute(
+        "SELECT nombre FROM categorias WHERE nombre = ? COLLATE NOCASE", (nombre,)
+    ).fetchone()
+    if existente:
+        conn.close()
+        raise ValueError("Ya existe una categoría con ese nombre")
+
+    conn.execute("INSERT INTO categorias (nombre) VALUES (?)", (nombre,))
+    conn.commit()
+    categoria = conn.execute(
+        "SELECT nombre FROM categorias WHERE nombre = ?", (nombre,)
+    ).fetchone()["nombre"]
+    conn.close()
+    return categoria
+
+
+def listar_marcas():
+    conn = get_connection()
+    marcas = [
+        row["nombre"]
+        for row in conn.execute("SELECT nombre FROM marcas ORDER BY nombre COLLATE NOCASE")
+    ]
+    conn.close()
+    return marcas
+
+
+def crear_marca(nombre):
+    nombre = (nombre or "").strip()
+    if not nombre:
+        raise ValueError("El nombre de la marca es obligatorio")
+
+    conn = get_connection()
+    existente = conn.execute(
+        "SELECT nombre FROM marcas WHERE nombre = ? COLLATE NOCASE", (nombre,)
+    ).fetchone()
+    if existente:
+        conn.close()
+        raise ValueError("Ya existe una marca con ese nombre")
+
+    conn.execute("INSERT INTO marcas (nombre) VALUES (?)", (nombre,))
+    conn.commit()
+    marca = conn.execute(
+        "SELECT nombre FROM marcas WHERE nombre = ?", (nombre,)
+    ).fetchone()["nombre"]
+    conn.close()
+    return marca
 
 
 def actualizar_precios(data):

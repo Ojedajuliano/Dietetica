@@ -58,6 +58,31 @@ export function getCategorias() {
   return fetch(`${API}/categorias`).then(parseResponse);
 }
 
+export function crearCategoria(nombre) {
+  return fetch(`${API}/categorias`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre }),
+  })
+    .then(parseResponse)
+    .then((categoria) => {
+      window.dispatchEvent(new Event("categorias:actualizadas"));
+      return categoria;
+    });
+}
+
+export function getMarcas() {
+  return fetch(`${API}/marcas`).then(parseResponse);
+}
+
+export function crearMarca(nombre) {
+  return fetch(`${API}/marcas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre }),
+  }).then(parseResponse);
+}
+
 export function getProveedores() {
   return fetch(`${API}/proveedores`).then(parseResponse);
 }

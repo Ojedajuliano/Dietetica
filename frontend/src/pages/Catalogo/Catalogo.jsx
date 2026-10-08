@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import "../Inventario/Inventario.css";
 import Tablas from "../../components/Tablas/Tablas";
 import { getCategorias, getProductos } from "../../api/productos";
 
 const Catalogo = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const categoria = searchParams.get("categoria") || "";
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
-  const [categoria, setCategoria] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [error, setError] = useState("");
 
@@ -23,12 +25,26 @@ const Catalogo = () => {
 
   useEffect(() => {
     getCategorias().then(setCategorias).catch(() => {});
-    cargar("", "");
   }, []);
 
   useEffect(() => {
-    cargar(busqueda, categoria);
+    let vigente = true;
+    getProductos({ categoria })
+      .then((resultado) => {
+        if (vigente) {
+          setProductos(resultado);
+          setError("");
+        }
+      })
+      .catch((e) => {
+        if (vigente) setError(e.message);
+      });
+    return () => { vigente = false; };
   }, [categoria]);
+
+  const seleccionarCategoria = (nuevaCategoria) => {
+    setSearchParams(nuevaCategoria ? { categoria: nuevaCategoria } : {});
+  };
 
   return (
     <div className="inventario-container">
@@ -47,12 +63,12 @@ const Catalogo = () => {
       <div className="table-content-wrapper">
         {error && <p className="text-danger">{error}</p>}
         <div className="filtros-inventario">
-          <button className={`filtro-btn ${categoria === "" ? "activo" : ""}`} onClick={() => setCategoria("")}>Todas</button>
+          <button className={`filtro-btn ${categoria === "" ? "activo" : ""}`} onClick={() => seleccionarCategoria("")}>Todas</button>
           {categorias.map((c) => (
             <button
               key={c}
               className={`filtro-btn ${categoria === c ? "activo" : ""}`}
-              onClick={() => setCategoria(c)}
+              onClick={() => seleccionarCategoria(c)}
             >
               {c}
             </button>
