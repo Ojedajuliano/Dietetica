@@ -1,0 +1,49 @@
+.compra-venta-container {
+  min-height: 100vh;
+  padding: 2rem clamp(1rem, 3vw, 2.5rem);
+  background: #f8fafc;
+}
+
+.cv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1200px;
+  margin: 0 auto 1.5rem;
+}
+
+.cv-content {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.cv-resultados {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  right: 0;
+  left: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: 0 0.5rem 1rem rgb(0 0 0 / 15%);
+}
+
+.cv-item-form {
+  background: #fbfdff;
+}
+
+@media (max-width: 576px) {
+  .cv-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .cv-header .btn-group {
+    width: 100%;
+  }
+
+  .cv-header .btn-group .btn {
+    flex: 1;
+  }
+}

@@ -198,6 +198,65 @@ def init_db():
         """
     )
     conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ventas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL DEFAULT 1,
+            cliente_id INTEGER,
+            fecha TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            subtotal REAL NOT NULL,
+            descuento REAL NOT NULL DEFAULT 0,
+            recargo REAL NOT NULL DEFAULT 0,
+            total REAL NOT NULL,
+            comentario TEXT,
+            estado TEXT NOT NULL DEFAULT 'COMPLETADA'
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS detalle_ventas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            venta_id INTEGER NOT NULL,
+            producto_id INTEGER NOT NULL,
+            lote_id INTEGER,
+            cantidad REAL NOT NULL,
+            precio_unitario REAL NOT NULL,
+            subtotal REAL NOT NULL,
+            FOREIGN KEY (venta_id) REFERENCES ventas(id),
+            FOREIGN KEY (producto_id) REFERENCES productos(id),
+            FOREIGN KEY (lote_id) REFERENCES lotes(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS compras_registradas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proveedor TEXT NOT NULL DEFAULT '',
+            numero_factura TEXT NOT NULL DEFAULT '',
+            fecha TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            total REAL NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS detalle_compras_registradas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            compra_id INTEGER NOT NULL,
+            producto_id INTEGER NOT NULL,
+            lote_id INTEGER,
+            cantidad REAL NOT NULL,
+            costo_unitario REAL NOT NULL,
+            subtotal REAL NOT NULL,
+            FOREIGN KEY (compra_id) REFERENCES compras_registradas(id),
+            FOREIGN KEY (producto_id) REFERENCES productos(id),
+            FOREIGN KEY (lote_id) REFERENCES lotes(id)
+        )
+        """
+    )
+    conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_lotes_vencimiento ON lotes(fecha_vencimiento)"
     )
     conn.execute(
@@ -270,7 +329,7 @@ def obtener_producto(producto_id):
     return producto
 
 
-def listar_productos(busqueda="", filtro="", categoria="", proveedor=""):
+def listar_productos(busqueda="", filtro="", categoria="", proveedor="", marca=""):
     conn = get_connection()
     sql = """
         SELECT p.*, COALESCE(c.nombre, p.categoria, 'Otros') AS categoria,
@@ -292,6 +351,9 @@ def listar_productos(busqueda="", filtro="", categoria="", proveedor=""):
     if proveedor:
         sql += " AND p.proveedor = ?"
         params.append(proveedor)
+    if marca:
+        sql += " AND p.marca = ?"
+        params.append(marca)
     sql += " ORDER BY p.nombre COLLATE NOCASE"
     productos = [_producto_desde_row(row) for row in conn.execute(sql, params)]
     conn.close()
@@ -811,3 +873,314 @@ def verificar_login(usuario, password):
     ).fetchone()
     conn.close()
     return user is not None
+
+
+def registrar_venta(data):
+    try:
+        producto_id = int(data.get("producto_id"))
+    except (TypeError, ValueError):
+        raise ValueError("Seleccioná un producto válido")
+    if isinstance(data.get("producto_id"), bool):
+        raise ValueError("Seleccioná un producto válido")
+
+    cantidad = _numero(data.get("cantidad"), "La cantidad")
+    unidad = (data.get("unidad") or "").strip().lower()
+    if cantidad <= 0:
+        raise ValueError("La cantidad debe ser mayor que cero")
+
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        producto = _obtener_producto_conn(conn, producto_id)
+        if not producto or not producto["activo"]:
+            return None
+
+        if producto["tipo_venta"] == "peso":
+            if unidad not in ("kg", "gramos"):
+                raise ValueError("Este producto se vende por peso: indicá kg o gramos")
+            cantidad_stock = cantidad / 1000 if unidad == "gramos" else cantidad
+        else:
+            if unidad not in ("", "unidad"):
+                raise ValueError("Este producto se vende por unidad")
+            if cantidad != int(cantidad):
+                raise ValueError("Las unidades deben ser un número entero")
+            cantidad_stock = cantidad
+
+        cantidad_stock = round(cantidad_stock, 6)
+        stock_actual = float(producto["stock"] or 0)
+        if cantidad_stock > stock_actual + 1e-9:
+            raise ValueError(f"Stock insuficiente (disponible: {stock_actual:g})")
+
+        precio = float(producto["precio_venta"] or 0)
+        total = round(cantidad_stock * precio, 2)
+        cursor = conn.execute(
+            """
+            INSERT INTO ventas (usuario_id, fecha, subtotal, descuento, recargo, total, estado)
+            VALUES (1, datetime('now', 'localtime'), ?, 0, 0, ?, 'COMPLETADA')
+            """,
+            (total, total),
+        )
+        venta_id = cursor.lastrowid
+
+        restante = cantidad_stock
+        lotes = conn.execute(
+            """
+            SELECT id, cantidad FROM lotes
+            WHERE producto_id = ? AND cantidad > 0
+            ORDER BY fecha_vencimiento IS NULL, fecha_vencimiento, id
+            """,
+            (producto_id,),
+        ).fetchall()
+        asignaciones = []
+        for lote in lotes:
+            if restante <= 1e-9:
+                break
+            disponible = float(lote["cantidad"])
+            tomar = min(disponible, restante)
+            conn.execute(
+                "UPDATE lotes SET cantidad = ? WHERE id = ?",
+                (round(disponible - tomar, 6), lote["id"]),
+            )
+            asignaciones.append((lote["id"], tomar))
+            restante = round(restante - tomar, 6)
+        if restante > 1e-9:
+            asignaciones.append((None, restante))
+
+        for lote_id, cantidad_linea in asignaciones:
+            subtotal = round(cantidad_linea * precio, 2)
+            conn.execute(
+                """
+                INSERT INTO detalle_ventas
+                    (venta_id, producto_id, lote_id, cantidad, precio_unitario, subtotal)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (venta_id, producto_id, lote_id, cantidad_linea, precio, subtotal),
+            )
+
+        stock_restante = max(0.0, round(stock_actual - cantidad_stock, 6))
+        conn.execute(
+            """
+            UPDATE productos SET stock = ?, updated_at = datetime('now', 'localtime')
+            WHERE id = ?
+            """,
+            (stock_restante, producto_id),
+        )
+        detalle = (
+            f"{cantidad:g} g" if unidad == "gramos"
+            else f"{cantidad:g} {'kg' if unidad == 'kg' else 'u.'}"
+        )
+        _registrar_movimiento(
+            conn, producto_id, "salida", cantidad_stock,
+            f"Venta de mostrador ({detalle})",
+        )
+        conn.commit()
+        return {
+            "id": venta_id,
+            "producto_id": producto_id,
+            "producto_nombre": producto["nombre"],
+            "marca": producto["marca"],
+            "cantidad_descontada": cantidad_stock,
+            "tipo_venta": producto["tipo_venta"],
+            "total": total,
+            "stock_restante": stock_restante,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def listar_ventas(limite=50):
+    limite = max(1, min(int(limite), 500))
+    conn = get_connection()
+    try:
+        return [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT v.id, v.fecha, SUM(dv.cantidad) AS cantidad, p.nombre AS producto_nombre,
+                    p.marca, p.tipo_venta, dv.precio_unitario,
+                    ROUND(SUM(dv.subtotal), 2) AS total
+                FROM ventas v
+                JOIN detalle_ventas dv ON dv.venta_id = v.id
+                JOIN productos p ON p.id = dv.producto_id
+                WHERE v.estado = 'COMPLETADA'
+                GROUP BY v.id, p.id
+                ORDER BY v.id DESC
+                LIMIT ?
+                """,
+                (limite,),
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def registrar_compra(data):
+    proveedor = str(data.get("proveedor") or "").strip()
+    numero_factura = str(data.get("numero_factura") or "").strip()
+    if len(proveedor) > 120:
+        raise ValueError("El proveedor no puede superar los 120 caracteres")
+    if len(numero_factura) > 60:
+        raise ValueError("El número de factura no puede superar los 60 caracteres")
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValueError("Agregá al menos un producto a la compra")
+
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.execute(
+            """
+            INSERT INTO compras_registradas (proveedor, numero_factura, total)
+            VALUES (?, ?, 0)
+            """,
+            (proveedor, numero_factura),
+        )
+        compra_id = cursor.lastrowid
+        total = 0.0
+        alertas = []
+
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("Cada producto de la compra debe ser válido")
+            try:
+                producto_id = int(item.get("producto_id"))
+            except (TypeError, ValueError):
+                raise ValueError("Seleccioná un producto válido")
+            if isinstance(item.get("producto_id"), bool):
+                raise ValueError("Seleccioná un producto válido")
+
+            producto = _obtener_producto_conn(conn, producto_id)
+            if not producto or not producto["activo"]:
+                raise ValueError("Uno de los productos no existe o está inactivo")
+
+            cantidad = _numero(item.get("cantidad"), f"La cantidad de {producto['nombre']}")
+            costo = _numero(item.get("costo_unitario"), f"El costo de {producto['nombre']}")
+            if cantidad <= 0:
+                raise ValueError(f"La cantidad de {producto['nombre']} debe ser mayor que cero")
+            if producto["tipo_venta"] != "peso" and cantidad != int(cantidad):
+                raise ValueError(f"La cantidad de {producto['nombre']} debe ser entera")
+            if costo < 0:
+                raise ValueError(f"El costo de {producto['nombre']} no puede ser negativo")
+
+            fecha_vencimiento = item.get("fecha_vencimiento") or None
+            if fecha_vencimiento:
+                try:
+                    fecha_vencimiento = date.fromisoformat(fecha_vencimiento).isoformat()
+                except (TypeError, ValueError):
+                    raise ValueError("La fecha de vencimiento debe ser una fecha válida")
+
+            precio_venta = item.get("precio_venta")
+            if precio_venta not in (None, ""):
+                precio_venta = _numero(
+                    precio_venta, f"El precio de venta de {producto['nombre']}"
+                )
+                if precio_venta < 0:
+                    raise ValueError(
+                        f"El precio de venta de {producto['nombre']} no puede ser negativo"
+                    )
+
+            costo_anterior = float(producto["costo"] or 0)
+            if costo > costo_anterior:
+                alertas.append({
+                    "producto_id": producto_id,
+                    "producto": producto["nombre"],
+                    "costo_anterior": costo_anterior,
+                    "costo_nuevo": costo,
+                    "mensaje": (
+                        f'El costo de "{producto["nombre"]}" subió '
+                        f"de ${costo_anterior:g} a ${costo:g}."
+                    ),
+                })
+
+            subtotal = round(cantidad * costo, 2)
+            lote_cursor = conn.execute(
+                """
+                INSERT INTO lotes (producto_id, cantidad, costo_unitario, fecha_vencimiento)
+                VALUES (?, ?, ?, ?)
+                """,
+                (producto_id, cantidad, costo, fecha_vencimiento),
+            )
+            lote_id = lote_cursor.lastrowid
+            conn.execute(
+                """
+                UPDATE productos
+                SET stock = stock + ?, costo = ?,
+                    precio_venta = COALESCE(?, precio_venta),
+                    updated_at = datetime('now', 'localtime')
+                WHERE id = ?
+                """,
+                (cantidad, costo, precio_venta, producto_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO detalle_compras_registradas
+                    (compra_id, producto_id, lote_id, cantidad, costo_unitario, subtotal)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (compra_id, producto_id, lote_id, cantidad, costo, subtotal),
+            )
+            _registrar_movimiento(
+                conn, producto_id, "ingreso_compra", cantidad,
+                f"Compra #{compra_id}" + (
+                    f" - Factura {numero_factura}" if numero_factura else ""
+                ),
+                lote_id,
+            )
+            total += subtotal
+
+        total = round(total, 2)
+        conn.execute(
+            "UPDATE compras_registradas SET total = ? WHERE id = ?",
+            (total, compra_id),
+        )
+        conn.commit()
+        return {
+            "id": compra_id,
+            "total": total,
+            "alertas": alertas,
+            "message": "Mercadería ingresada",
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def listar_compras(limite=50):
+    limite = max(1, min(int(limite), 500))
+    conn = get_connection()
+    try:
+        compras = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT id, proveedor, numero_factura, fecha, total
+                FROM compras_registradas
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limite,),
+            )
+        ]
+        for compra in compras:
+            compra["items"] = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT d.producto_id, p.nombre, d.cantidad,
+                        d.costo_unitario, d.subtotal, d.lote_id
+                    FROM detalle_compras_registradas d
+                    JOIN productos p ON p.id = d.producto_id
+                    WHERE d.compra_id = ?
+                    ORDER BY d.id
+                    """,
+                    (compra["id"],),
+                )
+            ]
+        return compras
+    finally:
+        conn.close()

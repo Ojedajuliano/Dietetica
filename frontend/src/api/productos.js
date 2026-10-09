@@ -8,12 +8,13 @@ async function parseResponse(response) {
   return data;
 }
 
-export function getProductos({ q = "", filtro = "", categoria = "", proveedor = "" } = {}) {
+export function getProductos({ q = "", filtro = "", categoria = "", proveedor = "", marca = "" } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (filtro) params.set("filtro", filtro);
   if (categoria) params.set("categoria", categoria);
   if (proveedor) params.set("proveedor", proveedor);
+  if (marca) params.set("marca", marca);
   const query = params.toString();
   return fetch(`${API}/productos${query ? `?${query}` : ""}`).then(parseResponse);
 }
@@ -114,6 +115,30 @@ export function getMovimientos() {
 
 export function crearMovimiento(payload) {
   return fetch(`${API}/movimientos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(parseResponse);
+}
+
+export function getVentas(limite = 15) {
+  return fetch(`${API}/ventas?limite=${limite}`).then(parseResponse);
+}
+
+export function registrarVenta(payload) {
+  return fetch(`${API}/ventas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(parseResponse);
+}
+
+export function getCompras(limite = 15) {
+  return fetch(`${API}/compras?limite=${limite}`).then(parseResponse);
+}
+
+export function registrarCompra(payload) {
+  return fetch(`${API}/compras`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

@@ -14,14 +14,18 @@ from database import (
     eliminar_producto,
     historial_movimientos,
     init_db,
+    listar_compras,
     listar_lotes,
     listar_categorias,
     listar_marcas,
     listar_productos,
     listar_proveedores,
+    listar_ventas,
     obtener_producto,
     registrar_lote,
     registrar_movimiento,
+    registrar_compra,
+    registrar_venta,
     resumen_inventario,
     verificar_login,
 )
@@ -121,7 +125,8 @@ def api_listar_productos():
     filtro = request.args.get("filtro", "").strip()
     categoria = request.args.get("categoria", "").strip()
     proveedor = request.args.get("proveedor", "").strip()
-    return jsonify(listar_productos(busqueda, filtro, categoria, proveedor))
+    marca = request.args.get("marca", "").strip()
+    return jsonify(listar_productos(busqueda, filtro, categoria, proveedor, marca))
 
 
 @app.route("/api/productos/<int:producto_id>", methods=["GET"])
@@ -238,6 +243,36 @@ def api_movimientos():
     if not movimiento:
         return jsonify({"message": "Producto no encontrado"}), 404
     return jsonify(movimiento), 201
+
+
+@app.route("/api/ventas", methods=["GET", "POST"])
+def api_ventas():
+    if request.method == "GET":
+        limite = request.args.get("limite", 50, type=int)
+        return jsonify(listar_ventas(limite))
+
+    data = request.get_json(silent=True) or {}
+    try:
+        venta = registrar_venta(data)
+    except (TypeError, ValueError) as e:
+        return jsonify({"message": str(e) or "Datos de la venta no válidos"}), 400
+    if not venta:
+        return jsonify({"message": "Producto no encontrado"}), 404
+    return jsonify(venta), 201
+
+
+@app.route("/api/compras", methods=["GET", "POST"])
+def api_compras():
+    if request.method == "GET":
+        limite = request.args.get("limite", 50, type=int)
+        return jsonify(listar_compras(limite))
+
+    data = request.get_json(silent=True) or {}
+    try:
+        compra = registrar_compra(data)
+    except (TypeError, ValueError) as e:
+        return jsonify({"message": str(e) or "Datos de la compra no válidos"}), 400
+    return jsonify(compra), 201
 
 
 if __name__ == "__main__":
