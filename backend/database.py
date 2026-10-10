@@ -1,7 +1,9 @@
 import math
 import os
+import re
 import sqlite3
 from datetime import date, timedelta
+from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "dietetica.db")
@@ -42,6 +44,7 @@ def init_db():
         """
     )
     conn.execute("INSERT OR IGNORE INTO roles (id, nombre) VALUES (1, 'Administrador')")
+    conn.execute("INSERT OR IGNORE INTO roles (id, nombre) VALUES (2, 'Empleado')")
 
     conn.execute(
         """
@@ -262,6 +265,22 @@ def init_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_inventario_movimientos_fecha "
         "ON inventario_movimientos(fecha)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS registro_actividad (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            accion TEXT NOT NULL,
+            detalle TEXT NOT NULL,
+            fecha TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_registro_actividad_fecha "
+        "ON registro_actividad(fecha DESC)"
     )
     conn.commit()
     conn.close()
@@ -866,16 +885,131 @@ def historial_movimientos(producto_id=None, limite=100):
 
 
 def verificar_login(usuario, password):
+    if not isinstance(usuario, str) or not isinstance(password, str):
+        return None
     conn = get_connection()
     user = conn.execute(
-        "SELECT * FROM usuarios WHERE usuario = ? AND password_hash = ? AND activo = 1",
-        (usuario, password)
+        """
+        SELECT u.id, u.nombre, u.usuario, u.password_hash, r.nombre AS rol
+        FROM usuarios u JOIN roles r ON r.id = u.rol_id
+        WHERE u.usuario = ? AND u.activo = 1
+        """,
+        (usuario.strip(),),
     ).fetchone()
+    if not user:
+        conn.close()
+        return None
+    password_hash = user["password_hash"]
+    valido = False
+    if password_hash.startswith(("scrypt:", "pbkdf2:")):
+        try:
+            valido = check_password_hash(password_hash, password)
+        except ValueError:
+            valido = False
+    else:
+        valido = password_hash == password
+        if valido:
+            conn.execute(
+                "UPDATE usuarios SET password_hash = ? WHERE id = ?",
+                (generate_password_hash(password), user["id"]),
+            )
+            conn.commit()
     conn.close()
-    return user is not None
+    if not valido:
+        return None
+    return {
+        "id": user["id"],
+        "nombre": user["nombre"],
+        "usuario": user["usuario"],
+        "rol": user["rol"],
+    }
 
 
-def registrar_venta(data):
+def crear_usuario(nombre, usuario, password):
+    nombre = nombre.strip()
+    usuario = usuario.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]{3,30}", usuario):
+        raise ValueError("El usuario debe tener entre 3 y 30 caracteres (letras, números, punto, guion o guion bajo)")
+    if len(nombre) < 2 or len(nombre) > 80:
+        raise ValueError("El nombre debe tener entre 2 y 80 caracteres")
+    if len(password) < 8 or not any(c.isalpha() for c in password) or not any(c.isdigit() for c in password):
+        raise ValueError("La contraseña debe tener al menos 8 caracteres, una letra y un número")
+    conn = get_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO usuarios (nombre, usuario, password_hash, rol_id)
+            VALUES (?, ?, ?, (SELECT id FROM roles WHERE nombre = 'Empleado'))
+            """,
+            (nombre, usuario, generate_password_hash(password)),
+        )
+        conn.commit()
+        return dict(conn.execute(
+            """
+            SELECT u.id, u.nombre, u.usuario, r.nombre AS rol
+            FROM usuarios u JOIN roles r ON r.id = u.rol_id
+            WHERE u.usuario = ?
+            """,
+            (usuario,),
+        ).fetchone())
+    except sqlite3.IntegrityError as error:
+        raise ValueError("Ese nombre de usuario ya está registrado") from error
+    finally:
+        conn.close()
+
+
+def listar_usuarios():
+    conn = get_connection()
+    try:
+        return [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT u.id, u.nombre, u.usuario, r.nombre AS rol, u.activo
+                FROM usuarios u JOIN roles r ON r.id = u.rol_id
+                ORDER BY u.nombre COLLATE NOCASE
+                """
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def registrar_actividad(usuario_id, accion, detalle):
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO registro_actividad (usuario_id, accion, detalle) VALUES (?, ?, ?)",
+            (usuario_id, accion, detalle),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def listar_actividad(limite=300):
+    limite = max(1, min(int(limite), 1000))
+    conn = get_connection()
+    try:
+        return [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT a.id, a.accion, a.detalle, a.fecha,
+                    u.nombre AS usuario_nombre, u.usuario
+                FROM registro_actividad a
+                JOIN usuarios u ON u.id = a.usuario_id
+                ORDER BY a.fecha DESC, a.id DESC
+                LIMIT ?
+                """,
+                (limite,),
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def registrar_venta(data, usuario_id=1):
     try:
         producto_id = int(data.get("producto_id"))
     except (TypeError, ValueError):
@@ -916,9 +1050,9 @@ def registrar_venta(data):
         cursor = conn.execute(
             """
             INSERT INTO ventas (usuario_id, fecha, subtotal, descuento, recargo, total, estado)
-            VALUES (1, datetime('now', 'localtime'), ?, 0, 0, ?, 'COMPLETADA')
+            VALUES (?, datetime('now', 'localtime'), ?, 0, 0, ?, 'COMPLETADA')
             """,
-            (total, total),
+            (usuario_id, total, total),
         )
         venta_id = cursor.lastrowid
 

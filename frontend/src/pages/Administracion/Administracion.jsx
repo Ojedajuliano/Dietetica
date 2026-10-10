@@ -1,81 +1,178 @@
-import React from "react";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-const Administracion = () => {
-  //Navigate permite navegar en las paginas en react
-  const navigate = useNavigate();
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { getActividad, getUsuarios, iniciarSesionAdministrador } from "../../api/auth";
+import "../Inventario/Inventario.css";
 
-  //Guardo los valores que me mandan y que pueden cambio de estado con el useState
-  //Guardo los datos que me mandan
-  //Arranca en 0, por eso ''
+const LoginAdministrador = ({ onAdminLogin }) => {
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
-  const [mensaje, setMensaje] = useState("");
+  const [error, setError] = useState("");
+  const [ingresando, setIngresando] = useState(false);
 
-  const handleSubmit = async (e) => {
-    // Evita que el form recargue la página al enviarse
-    e.preventDefault();
-
+  const ingresar = async (event) => {
+    event.preventDefault();
+    setError("");
+    setIngresando(true);
     try {
-      //Hago la peticion al back
-      const response = await fetch("http://localhost:5000/app/administracion", {
-        method: "POST",
-        // Le avisa al servidor que le estamos mandando datos en formato JSON.
-        headers: { "Content-Type": "application/json" },
-        //Convierte el objeto usuario, password en un string JSON
-        body: JSON.stringify({ usuario, password }),
-      });
-
-      //Convierte la respuesta del servidor (que llega como JSON) en un objeto de JavaScript.
-      const data = await response.json();
-
-      //Si la respuesta que me mandan por POST es correcta, va a redigir a /Panel
-      if (response.ok){
-        navigate('/Panel')
-      }else{
-      // El back siempre manda "message" (tanto en éxito como en error),
-      // así que directamente lo mostramos sin necesidad de un if/else
-      setMensaje(data.message);
-      }
-
-    } catch (error) {
-      // Se ejecuta si falla la conexión (server apagado, sin internet, etc.)
-      setMensaje("Error al conectar con el servidor");
+      const data = await iniciarSesionAdministrador(usuario.trim(), password);
+      onAdminLogin(data.usuario);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setIngresando(false);
     }
   };
 
   return (
-    <div className="container vh-100 d-flex justify-content-center align-items-center">
-      <div className="card p-4 rounded-4 shadow" style={{ width: "350px" }}>
-        <h2 className="text-center mb-3">Iniciar sesión</h2>
-        <form onSubmit={handleSubmit}>
-          <input
-            className="form-control mb-3"
-            type="text"
-            placeholder="USUARIO"
-            name="username"
-            // value + onChange = "input controlado": React maneja el valor del input
-            value={usuario}
-            onChange={(e) => setUsuario(e.target.value)}
-          />
-
-          <input
-            className="form-control mb-3"
-            type="password"
-            placeholder="PASSWORD"
-            name="password"
-            // Antes le faltaba esto: sin value/onChange, password siempre quedaba en ""
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-
-          <button className="btn btn-primary" type="submit">Ingresar</button>
-          {/* Si mensaje tiene contenido, lo muestra. Si está vacío (""), no renderiza nada */}
-          {mensaje && <p>{mensaje}</p>}
-        </form>
+    <div className="inventario-container">
+      <div className="header-inventario">
+        <h1 className="titulo-izq">Administración</h1>
+      </div>
+      <div className="container py-5">
+        <section className="card border-0 shadow-sm p-4 mx-auto" style={{ maxWidth: "440px" }}>
+          <h2 className="h4 fw-bold mb-2">Acceso de administrador</h2>
+          <p className="text-secondary">Ingresá las credenciales de administrador para consultar movimientos y usuarios.</p>
+          {error && <div className="alert alert-danger" role="alert">{error}</div>}
+          <form onSubmit={ingresar}>
+            <label className="form-label" htmlFor="admin-usuario">Usuario administrador</label>
+            <input
+              id="admin-usuario"
+              className="form-control mb-3"
+              autoComplete="username"
+              value={usuario}
+              onChange={(event) => setUsuario(event.target.value)}
+              required
+            />
+            <label className="form-label" htmlFor="admin-password">Contraseña</label>
+            <input
+              id="admin-password"
+              className="form-control mb-4"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+            <button className="btn btn-primary w-100 mb-3" type="submit" disabled={ingresando}>
+              {ingresando ? "Validando..." : "Ingresar a Administración"}
+            </button>
+          </form>
+          <Link to="/inventario" className="text-center">Volver al inventario</Link>
+        </section>
       </div>
     </div>
   );
+};
+
+const PanelAdministracion = () => {
+  const [usuarios, setUsuarios] = useState([]);
+  const [actividad, setActividad] = useState([]);
+  const [error, setError] = useState("");
+
+  const cargar = useCallback(async () => {
+    try {
+      const [listaUsuarios, listaActividad] = await Promise.all([
+        getUsuarios(),
+        getActividad(),
+      ]);
+      setUsuarios(listaUsuarios);
+      setActividad(listaActividad);
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    Promise.all([getUsuarios(), getActividad()])
+      .then(([listaUsuarios, listaActividad]) => {
+        setUsuarios(listaUsuarios);
+        setActividad(listaActividad);
+      })
+      .catch((e) => setError(e.message));
+  }, []);
+
+  useEffect(() => {
+    const actualizarActividad = () => {
+      getActividad()
+        .then(setActividad)
+        .catch((e) => setError(e.message));
+    };
+    const intervalo = window.setInterval(actualizarActividad, 10000);
+    return () => window.clearInterval(intervalo);
+  }, []);
+
+  return (
+    <div className="inventario-container">
+      <div className="header-inventario">
+        <h1 className="titulo-izq">Administración</h1>
+      </div>
+      <div className="table-content-wrapper">
+        {error && <div className="alert alert-danger">{error}</div>}
+
+        <section className="card border-0 shadow-sm p-4 mb-4">
+          <h2 className="h5 fw-bold mb-3">Usuarios registrados ({usuarios.length})</h2>
+          <div className="table-responsive">
+            <table className="table table-hover align-middle mb-0">
+              <thead className="table-light">
+                <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th></tr>
+              </thead>
+              <tbody>
+                {usuarios.map((user) => (
+                  <tr key={user.id}>
+                    <td>{user.nombre}</td>
+                    <td>{user.usuario}</td>
+                    <td>{user.rol}</td>
+                    <td>{user.activo ? "Activo" : "Inactivo"}</td>
+                  </tr>
+                ))}
+                {usuarios.length === 0 && (
+                  <tr><td colSpan="4" className="text-center text-secondary py-4">No hay usuarios para mostrar.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="card border-0 shadow-sm p-4">
+          <div className="d-flex align-items-center justify-content-between gap-3 mb-3">
+            <h2 className="h5 fw-bold mb-0">Registro de movimientos</h2>
+            <button className="btn btn-outline-primary btn-sm" type="button" onClick={cargar}>
+              Actualizar
+            </button>
+          </div>
+          <div className="table-responsive">
+            <table className="table table-hover align-middle mb-0">
+              <thead className="table-light">
+                <tr><th>Día</th><th>Hora</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr>
+              </thead>
+              <tbody>
+                {actividad.map((item) => (
+                  <tr key={item.id}>
+                    <td className="text-nowrap">{item.fecha.slice(0, 10)}</td>
+                    <td className="text-nowrap">{item.fecha.slice(11, 19)}</td>
+                    <td>{item.usuario_nombre} <small className="text-secondary">({item.usuario})</small></td>
+                    <td className="text-nowrap">{item.accion}</td>
+                    <td>{item.detalle}</td>
+                  </tr>
+                ))}
+                {actividad.length === 0 && (
+                  <tr><td colSpan="5" className="text-center text-secondary py-4">Todavía no hay movimientos registrados.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+};
+
+const Administracion = ({ usuario, onAdminLogin }) => {
+  if (usuario?.rol !== "Administrador") {
+    return <LoginAdministrador onAdminLogin={onAdminLogin} />;
+  }
+  return <PanelAdministracion />;
 };
 
 export default Administracion;

@@ -5,6 +5,7 @@
 - Backend: desde `backend`, instalar `requirements.txt` y ejecutar `python app.py`.
 - Frontend: desde `frontend`, ejecutar `npm install` y `npm run dev`.
 - El frontend se conecta al backend Flask en `http://localhost:5000`.
+- Iniciar sesión con el usuario inicial `admin` y contraseña `123`. Los empleados pueden crear su usuario desde la pantalla principal o el administrador puede gestionarlos desde **Administración**. En producción, definir la variable `FLASK_SECRET_KEY` antes de iniciar el backend.
 
 Al iniciar, el backend crea las tablas de movimientos y lotes que falten y agrega a `productos` los campos necesarios para stock, tipo de venta, proveedor y códigos internos. Si la base ya tenía productos sin código, se les asigna un código `INT-` automáticamente. Los productos con movimientos o lotes se archivan al eliminarlos para conservar su historial.
 
@@ -15,9 +16,13 @@ Al iniciar, el backend crea las tablas de movimientos y lotes que falten y agreg
 - Precios: actualización masiva por porcentaje o monto, limitada opcionalmente por categoría y proveedor. Un valor negativo aplica un descuento.
 - Lotes y vencimientos: registrar cantidad, identificación opcional y fecha de vencimiento de cada lote. El ingreso suma esa cantidad al stock; la pantalla identifica vencidos y los próximos a vencer en 30 días.
 - Movimientos: registrar mermas, roturas, consumo propio, bajas por vencimiento y devoluciones, siempre con cantidad y justificación. Las bajas reducen stock; las devoluciones lo reincorporan. Los ajustes manuales y el stock inicial también quedan en el historial.
+- Usuarios y auditoría: las cuentas de empleados se crean desde la pantalla principal o desde Administración y se almacenan con contraseña protegida en SQLite. Allí también se consulta el registro de compras, ventas, cambios de productos y movimientos de stock, incluyendo usuario, día y hora. El inventario requiere iniciar sesión.
 
 ## API de inventario
 
+- `POST /api/auth/login`, `POST /api/auth/admin-login`, `GET /api/auth/me`, `POST /api/auth/logout`
+- `POST /api/auth/register` (crea una cuenta de empleado e inicia su sesión)
+- `GET/POST /api/usuarios` y `GET /api/administracion/actividad` (solo administrador)
 - `GET/POST /api/productos`, `GET/PUT/DELETE /api/productos/<id>`
 - `PATCH /api/productos/<id>/stock`
 - `GET /api/inventario/resumen`, `GET/POST /api/categorias`, `GET/POST /api/marcas`, `GET /api/proveedores`
@@ -26,3 +31,4 @@ Al iniciar, el backend crea las tablas de movimientos y lotes que falten y agreg
 - `GET/POST /api/movimientos`
 
 Las cantidades son decimales para permitir productos fraccionados y vendidos por peso.
+Las rutas de inventario requieren una sesión iniciada; las compras, ventas, modificaciones y eliminaciones se registran para su consulta desde Administración.

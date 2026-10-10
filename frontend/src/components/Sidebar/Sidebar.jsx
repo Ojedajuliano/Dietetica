@@ -2,13 +2,13 @@ import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import './Sidebar.css'
 
-const Sidebar = () => {
+const Sidebar = ({ usuario, onCerrarSesion }) => {
   const [open, setOpen] = useState(false)
 
   const seccionesProductos = [
     { nombre: 'Ver todos', pagina: '/ver-todo' },
     { nombre: 'Catalogo', pagina: '/catalogo' },
-    { nombre: 'Movimientos', pagina: '/movimientos' },
+    { nombre: 'Movimientos de stock', pagina: '/movimientos' },
     { nombre: 'Vencimiento', pagina: '/vencimiento' },
   ]
 
@@ -40,9 +40,14 @@ const Sidebar = () => {
             </div>
           </div>
           <NavLink to="/compra-venta">Compra Venta</NavLink>
-          {/* <NavLink to="/historial">Historial</NavLink> */}
-          <NavLink to="/administracion">Administracion</NavLink>
+          <NavLink to="/administracion">Administración</NavLink>
         </nav>
+        <div className="mt-auto">
+          <small className="d-block text-secondary mb-2">{usuario?.nombre}</small>
+          <button className="btn btn-outline-secondary btn-sm w-100" type="button" onClick={onCerrarSesion}>
+            Cerrar sesión
+          </button>
+        </div>
       </aside>
     </>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import "../Inventario/Inventario.css";
-import { crearMovimiento, getLotes, getMovimientos, getProductos } from "../../api/productos";
+import { crearMovimiento, getLotes, getProductos } from "../../api/productos";
 
 const TIPOS = [
   { valor: "merma", texto: "Pérdida / merma" },
@@ -13,7 +13,6 @@ const TIPOS = [
 const Movimientos = () => {
   const [productos, setProductos] = useState([]);
   const [lotes, setLotes] = useState([]);
-  const [movimientos, setMovimientos] = useState([]);
   const [form, setForm] = useState({
     producto_id: "",
     tipo: "merma",
@@ -27,14 +26,12 @@ const Movimientos = () => {
 
   const cargar = async () => {
     try {
-      const [listaProductos, listaLotes, listaMovimientos] = await Promise.all([
+      const [listaProductos, listaLotes] = await Promise.all([
         getProductos(),
         getLotes(),
-        getMovimientos(),
       ]);
       setProductos(listaProductos);
       setLotes(listaLotes);
-      setMovimientos(listaMovimientos);
       setError("");
     } catch (e) {
       setError(e.message);
@@ -43,12 +40,11 @@ const Movimientos = () => {
 
   useEffect(() => {
     let vigente = true;
-    Promise.all([getProductos(), getLotes(), getMovimientos()])
-      .then(([listaProductos, listaLotes, listaMovimientos]) => {
+    Promise.all([getProductos(), getLotes()])
+      .then(([listaProductos, listaLotes]) => {
         if (!vigente) return;
         setProductos(listaProductos);
         setLotes(listaLotes);
-        setMovimientos(listaMovimientos);
       })
       .catch((e) => { if (vigente) setError(e.message); });
     return () => { vigente = false; };
@@ -146,30 +142,6 @@ const Movimientos = () => {
           </small>
         </form>
 
-        <div className="card border-0 shadow-sm p-4">
-          <h4 className="fw-bold mb-3">Historial de movimientos</h4>
-          <div className="table-responsive">
-            <table className="table table-hover align-middle mb-0">
-              <thead className="table-light">
-                <tr>
-                  <th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>Justificación</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movimientos.length === 0 && <tr><td colSpan="5" className="text-center text-secondary py-4">Todavía no hay movimientos registrados.</td></tr>}
-                {movimientos.map((movimiento) => (
-                  <tr key={movimiento.id}>
-                    <td>{movimiento.fecha}</td>
-                    <td>{movimiento.producto_nombre}</td>
-                    <td className="text-capitalize">{movimiento.tipo.replaceAll("_", " ")}</td>
-                    <td>{movimiento.cantidad} {movimiento.tipo_venta === "peso" ? "kg" : "u"}</td>
-                    <td>{movimiento.motivo}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
     </div>
   );
