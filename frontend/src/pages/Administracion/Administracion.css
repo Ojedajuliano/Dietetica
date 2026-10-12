@@ -1,0 +1,256 @@
+.estadisticas-panel {
+  margin-bottom: 24px;
+}
+
+.estadisticas-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.estadisticas-titulo h2 {
+  color: rgb(15, 76, 129);
+}
+
+.estadisticas-indicadores {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.estadistica-indicador {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #e5eaf0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(15 76 129 / 5%);
+}
+
+.estadistica-indicador-icono {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 20px;
+}
+
+.estadistica-indicador-icono.ventas {
+  color: #0f4c81;
+  background: #e8f2fb;
+}
+
+.estadistica-indicador-icono.ganancia {
+  color: #15803d;
+  background: #e8f7ed;
+}
+
+.estadistica-indicador-icono.inversion {
+  color: #7c3aed;
+  background: #f1eafe;
+}
+
+.estadistica-indicador-icono.margen {
+  color: #b45309;
+  background: #fff4df;
+}
+
+.estadistica-indicador > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.estadistica-indicador > div > span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.estadistica-indicador strong {
+  overflow-wrap: anywhere;
+  color: #1e293b;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.estadisticas-graficos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.estadisticas-graficos .card,
+.estadisticas-panel > .card {
+  min-width: 0;
+}
+
+.estadisticas-grafico-ancho {
+  grid-column: 1 / -1;
+}
+
+.estadistica-grafico-ventas {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 12px;
+  min-height: 200px;
+  padding-top: 10px;
+}
+
+.estadistica-columna {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  height: 190px;
+}
+
+.estadistica-valor-mes {
+  overflow: hidden;
+  max-width: 100%;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.estadistica-barra-mes-fondo {
+  display: flex;
+  align-items: flex-end;
+  width: min(100%, 42px);
+  height: 130px;
+  border-radius: 6px 6px 0 0;
+  background: #f1f5f9;
+}
+
+.estadistica-barra-mes {
+  width: 100%;
+  min-height: 0;
+  border-radius: 6px 6px 0 0;
+  background: #0f4c81;
+  transition: height 0.25s ease;
+}
+
+.estadistica-etiqueta-mes {
+  color: #64748b;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.estadistica-lista-barras {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.estadistica-producto-barra {
+  min-width: 0;
+}
+
+.estadistica-producto-encabezado {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.estadistica-producto-encabezado > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.estadistica-producto-encabezado strong {
+  flex-shrink: 0;
+  color: #334155;
+}
+
+.estadistica-barra-horizontal-fondo {
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: #e9eef4;
+}
+
+.estadistica-barra-horizontal {
+  height: 100%;
+  border-radius: inherit;
+  background: #2b78b7;
+  transition: width 0.25s ease;
+}
+
+.estadistica-barra-negativa {
+  background: #dc3545;
+}
+
+.estadistica-ganancia {
+  color: #15803d !important;
+}
+
+.estadistica-perdida {
+  color: #dc3545 !important;
+}
+
+.estadistica-producto-barra small {
+  display: block;
+  margin-top: 4px;
+}
+
+.estadistica-vacio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  color: #64748b;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .estadisticas-indicadores {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .estadisticas-titulo {
+    align-items: flex-start;
+  }
+
+  .estadisticas-indicadores,
+  .estadisticas-graficos {
+    grid-template-columns: 1fr;
+  }
+
+  .estadisticas-grafico-ancho {
+    grid-column: auto;
+  }
+
+  .estadistica-indicador {
+    padding: 14px;
+  }
+
+  .estadistica-indicador strong {
+    font-size: 18px;
+  }
+
+  .estadistica-valor-mes {
+    font-size: 10px;
+  }
+
+  .table-content-wrapper {
+    padding: 14px;
+  }
+}

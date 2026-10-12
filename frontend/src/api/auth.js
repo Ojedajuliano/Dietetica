@@ -64,3 +64,9 @@ export function getActividad() {
     credentials: "include",
   }).then(parseResponse);
 }
+
+export function getEstadisticasAdministracion() {
+  return fetch(`${API}/administracion/estadisticas`, {
+    credentials: "include",
+  }).then(parseResponse);
+}

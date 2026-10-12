@@ -608,6 +608,128 @@ def resumen_inventario():
     }
 
 
+def estadisticas_administracion():
+    conn = get_connection()
+    try:
+        resumen = conn.execute(
+            """
+            SELECT
+                ROUND(COALESCE(SUM(dv.subtotal), 0), 2) AS ingresos,
+                ROUND(COALESCE(SUM(
+                    dv.cantidad * COALESCE(l.costo_unitario, p.costo, 0)
+                ), 0), 2) AS costo_ventas,
+                ROUND(COALESCE(SUM(
+                    dv.subtotal - dv.cantidad * COALESCE(l.costo_unitario, p.costo, 0)
+                ), 0), 2) AS ganancia_bruta,
+                COUNT(DISTINCT v.id) AS ventas_completadas
+            FROM ventas v
+            JOIN detalle_ventas dv ON dv.venta_id = v.id
+            JOIN productos p ON p.id = dv.producto_id
+            LEFT JOIN lotes l ON l.id = dv.lote_id
+            WHERE v.estado = 'COMPLETADA'
+            """
+        ).fetchone()
+        inversion = conn.execute(
+            """
+            SELECT ROUND(COALESCE(SUM(stock * costo), 0), 2) AS inversion_stock
+            FROM productos
+            WHERE COALESCE(activo, 1) = 1
+            """
+        ).fetchone()["inversion_stock"]
+        ventas_mensuales = [
+            dict(row)
+            for row in conn.execute(
+                """
+                WITH RECURSIVE meses(mes, restante) AS (
+                    SELECT date('now', 'localtime', 'start of month', '-5 months'), 5
+                    UNION ALL
+                    SELECT date(mes, '+1 month'), restante - 1
+                    FROM meses
+                    WHERE restante > 0
+                )
+                SELECT strftime('%Y-%m', meses.mes) AS mes,
+                    ROUND(COALESCE(SUM(v.total), 0), 2) AS total
+                FROM meses
+                LEFT JOIN ventas v
+                    ON strftime('%Y-%m', v.fecha) = strftime('%Y-%m', meses.mes)
+                    AND v.estado = 'COMPLETADA'
+                GROUP BY meses.mes
+                ORDER BY meses.mes
+                """
+            )
+        ]
+        mas_vendidos = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT p.id, p.nombre AS producto, p.marca, p.tipo_venta,
+                    ROUND(SUM(dv.cantidad), 3) AS cantidad,
+                    ROUND(SUM(dv.subtotal), 2) AS ingresos
+                FROM ventas v
+                JOIN detalle_ventas dv ON dv.venta_id = v.id
+                JOIN productos p ON p.id = dv.producto_id
+                WHERE v.estado = 'COMPLETADA'
+                GROUP BY p.id
+                ORDER BY cantidad DESC, ingresos DESC, p.nombre COLLATE NOCASE
+                LIMIT 8
+                """
+            )
+        ]
+        rentabilidad = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT p.id, p.nombre AS producto,
+                    ROUND(SUM(dv.subtotal), 2) AS ingresos,
+                    ROUND(SUM(
+                        dv.cantidad * COALESCE(l.costo_unitario, p.costo, 0)
+                    ), 2) AS costo,
+                    ROUND(SUM(
+                        dv.subtotal - dv.cantidad * COALESCE(l.costo_unitario, p.costo, 0)
+                    ), 2) AS ganancia
+                FROM ventas v
+                JOIN detalle_ventas dv ON dv.venta_id = v.id
+                JOIN productos p ON p.id = dv.producto_id
+                LEFT JOIN lotes l ON l.id = dv.lote_id
+                WHERE v.estado = 'COMPLETADA'
+                GROUP BY p.id
+                ORDER BY ABS(ganancia) DESC, p.nombre COLLATE NOCASE
+                LIMIT 8
+                """
+            )
+        ]
+        reposicion = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT id, nombre AS producto, marca, stock, stock_minimo, stock_critico,
+                    unidad_medida
+                FROM productos
+                WHERE COALESCE(activo, 1) = 1 AND stock <= stock_minimo
+                ORDER BY stock ASC, stock_minimo DESC, nombre COLLATE NOCASE
+                """
+            )
+        ]
+        return {
+            "resumen": {
+                "ingresos": resumen["ingresos"],
+                "costo_ventas": resumen["costo_ventas"],
+                "ganancia_bruta": resumen["ganancia_bruta"],
+                "inversion_stock": inversion,
+                "ventas_completadas": resumen["ventas_completadas"],
+                "margen_porcentaje": round(
+                    resumen["ganancia_bruta"] / resumen["ingresos"] * 100, 2
+                ) if resumen["ingresos"] else 0,
+            },
+            "ventas_mensuales": ventas_mensuales,
+            "mas_vendidos": mas_vendidos,
+            "rentabilidad": rentabilidad,
+            "reposicion": reposicion,
+        }
+    finally:
+        conn.close()
+
+
 def listar_proveedores():
     conn = get_connection()
     proveedores = [

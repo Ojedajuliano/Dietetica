@@ -13,6 +13,7 @@ from database import (
     crear_producto,
     crear_usuario,
     eliminar_producto,
+    estadisticas_administracion,
     historial_movimientos,
     init_db,
     listar_actividad,
@@ -187,6 +188,13 @@ def api_actividad():
         return jsonify({"message": "Solo el administrador puede consultar la actividad"}), 403
     limite = request.args.get("limite", 300, type=int)
     return jsonify(listar_actividad(limite))
+
+
+@app.route("/api/administracion/estadisticas", methods=["GET"])
+def api_estadisticas_administracion():
+    if not es_administrador():
+        return jsonify({"message": "Solo el administrador puede consultar las estadísticas"}), 403
+    return jsonify(estadisticas_administracion())
 
 
 @app.route("/api/categorias", methods=["GET"])
