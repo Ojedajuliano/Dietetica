@@ -218,6 +218,59 @@ def init_db():
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS cajas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_apertura_id INTEGER NOT NULL,
+            fecha_apertura TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            monto_inicial REAL NOT NULL,
+            fecha_cierre TEXT,
+            monto_esperado REAL,
+            monto_real REAL,
+            diferencia REAL,
+            estado TEXT NOT NULL DEFAULT 'ABIERTA',
+            FOREIGN KEY (usuario_apertura_id) REFERENCES usuarios(id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_una_caja_abierta "
+        "ON cajas(estado) WHERE estado = 'ABIERTA'"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS movimientos_caja (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caja_id INTEGER NOT NULL,
+            usuario_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            concepto TEXT,
+            monto REAL NOT NULL,
+            fecha TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            venta_id INTEGER,
+            FOREIGN KEY (caja_id) REFERENCES cajas(id),
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+            FOREIGN KEY (venta_id) REFERENCES ventas(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cierres_caja (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caja_id INTEGER NOT NULL,
+            usuario_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            fecha TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            monto_esperado REAL NOT NULL,
+            monto_real REAL NOT NULL,
+            diferencia REAL NOT NULL,
+            FOREIGN KEY (caja_id) REFERENCES cajas(id),
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS detalle_ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             venta_id INTEGER NOT NULL,
@@ -425,6 +478,14 @@ def _registrar_movimiento(conn, producto_id, tipo, cantidad, motivo, lote_id=Non
 
 def crear_producto(data):
     conn = get_connection()
+    fecha_vencimiento = data.get("fecha_vencimiento")
+    if fecha_vencimiento:
+        try:
+            fecha_vencimiento = date.fromisoformat(fecha_vencimiento).isoformat()
+        except (TypeError, ValueError):
+            conn.close()
+            raise ValueError("La fecha de vencimiento debe ser una fecha válida")
+
     codigo = (data.get("codigo_barras") or "").strip()
     interno = 0
     if not codigo:
@@ -454,6 +515,9 @@ def crear_producto(data):
     if valores[7] < 0 or valores[8] < 0 or valores[9] < 0:
         conn.close()
         raise ValueError("Stock, costo y precio no pueden ser negativos")
+    if fecha_vencimiento and valores[7] <= 0:
+        conn.close()
+        raise ValueError("El stock inicial debe ser mayor que cero para registrar su vencimiento")
     cursor = conn.execute(
         """
         INSERT INTO productos (
@@ -466,7 +530,24 @@ def crear_producto(data):
         (*valores, "kg" if data["tipo_venta"] == "peso" else "unidad"),
     )
     producto_id = cursor.lastrowid
-    if valores[7] > 0:
+    if fecha_vencimiento:
+        lote_cursor = conn.execute(
+            """
+            INSERT INTO lotes (producto_id, cantidad, costo_unitario, fecha_vencimiento)
+            VALUES (?, ?, ?, ?)
+            """,
+            (producto_id, valores[7], valores[8], fecha_vencimiento),
+        )
+        lote_id = lote_cursor.lastrowid
+        _registrar_movimiento(
+            conn,
+            producto_id,
+            "ingreso_lote",
+            valores[7],
+            "Stock inicial con vencimiento",
+            lote_id,
+        )
+    elif valores[7] > 0:
         _registrar_movimiento(conn, producto_id, "ingreso", valores[7], "Stock inicial")
     conn.commit()
     producto = _producto_desde_row(_obtener_producto_conn(conn, producto_id))
@@ -740,6 +821,36 @@ def listar_proveedores():
     ]
     conn.close()
     return proveedores
+
+
+def asociar_productos_proveedor(producto_ids, proveedor):
+    ids = list(dict.fromkeys(producto_ids))
+    if not ids or any(type(producto_id) is not int or producto_id <= 0 for producto_id in ids):
+        raise ValueError("Seleccioná al menos un producto válido")
+    if len(proveedor) > 120:
+        raise ValueError("El proveedor no puede superar los 120 caracteres")
+
+    conn = get_connection()
+    placeholders = ",".join("?" for _ in ids)
+    encontrados = conn.execute(
+        f"SELECT id FROM productos WHERE COALESCE(activo, 1) = 1 AND id IN ({placeholders})",
+        ids,
+    ).fetchall()
+    if len(encontrados) != len(ids):
+        conn.close()
+        raise ValueError("Uno o más productos seleccionados no existen")
+
+    conn.executemany(
+        """
+        UPDATE productos
+        SET proveedor = ?, updated_at = datetime('now', 'localtime')
+        WHERE id = ?
+        """,
+        [(proveedor, producto_id) for producto_id in ids],
+    )
+    conn.commit()
+    conn.close()
+    return len(ids)
 
 
 def listar_categorias():
@@ -1131,6 +1242,188 @@ def listar_actividad(limite=300):
         conn.close()
 
 
+def _monto_caja(valor, nombre="El monto", permitir_cero=False):
+    if isinstance(valor, bool):
+        raise ValueError(f"{nombre} debe ser un número válido")
+    monto = _numero(valor, nombre)
+    if monto < 0 or (not permitir_cero and monto == 0):
+        operador = "mayor o igual a cero" if permitir_cero else "mayor que cero"
+        raise ValueError(f"{nombre} debe ser {operador}")
+    return round(monto, 2)
+
+
+def _caja_abierta_conn(conn):
+    row = conn.execute(
+        """
+        SELECT c.*, u.nombre AS usuario_apertura
+        FROM cajas c
+        JOIN usuarios u ON u.id = c.usuario_apertura_id
+        WHERE c.estado = 'ABIERTA'
+        """
+    ).fetchone()
+    if not row:
+        return None
+    caja = dict(row)
+    movimientos = conn.execute(
+        """
+        SELECT
+            COALESCE(SUM(CASE WHEN tipo = 'INGRESO' THEN monto ELSE -monto END), 0)
+                AS neto_movimientos
+        FROM movimientos_caja
+        WHERE caja_id = ?
+        """,
+        (caja["id"],),
+    ).fetchone()
+    caja["monto_esperado"] = round(
+        float(caja["monto_inicial"]) + float(movimientos["neto_movimientos"]), 2
+    )
+    return caja
+
+
+def estado_caja():
+    conn = get_connection()
+    try:
+        caja = _caja_abierta_conn(conn)
+        movimientos = []
+        if caja:
+            movimientos = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT m.*, u.nombre AS usuario_nombre
+                    FROM movimientos_caja m
+                    JOIN usuarios u ON u.id = m.usuario_id
+                    WHERE m.caja_id = ?
+                    ORDER BY m.fecha DESC, m.id DESC
+                    LIMIT 100
+                    """,
+                    (caja["id"],),
+                )
+            ]
+        cierres = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT cc.*, c.fecha_apertura, u.nombre AS usuario_nombre
+                FROM cierres_caja cc
+                JOIN cajas c ON c.id = cc.caja_id
+                JOIN usuarios u ON u.id = cc.usuario_id
+                ORDER BY cc.fecha DESC, cc.id DESC
+                LIMIT 100
+                """
+            )
+        ]
+        return {"caja_abierta": caja, "movimientos": movimientos, "cierres": cierres}
+    finally:
+        conn.close()
+
+
+def abrir_caja(usuario_id, monto_inicial):
+    monto = _monto_caja(monto_inicial, "El monto inicial", permitir_cero=True)
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if _caja_abierta_conn(conn):
+            raise ValueError("Ya hay una caja abierta")
+        cursor = conn.execute(
+            """
+            INSERT INTO cajas (usuario_apertura_id, monto_inicial, estado)
+            VALUES (?, ?, 'ABIERTA')
+            """,
+            (usuario_id, monto),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.IntegrityError as error:
+        conn.rollback()
+        raise ValueError("Ya hay una caja abierta") from error
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def registrar_movimiento_caja(usuario_id, tipo, monto, concepto):
+    tipo = str(tipo or "").strip().upper()
+    concepto = str(concepto or "").strip()
+    if tipo not in ("INGRESO", "EGRESO"):
+        raise ValueError("El tipo de movimiento debe ser ingreso o egreso")
+    if not concepto:
+        raise ValueError("El concepto es obligatorio")
+    if len(concepto) > 200:
+        raise ValueError("El concepto no puede superar los 200 caracteres")
+    monto = _monto_caja(monto)
+
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        caja = _caja_abierta_conn(conn)
+        if not caja:
+            raise ValueError("No hay una caja abierta")
+        conn.execute(
+            """
+            INSERT INTO movimientos_caja (caja_id, usuario_id, tipo, concepto, monto)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (caja["id"], usuario_id, tipo, concepto, monto),
+        )
+        conn.commit()
+        return caja["id"]
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def cerrar_caja(usuario_id, monto_real, tipo):
+    tipo = str(tipo or "").strip().upper()
+    if tipo not in ("PARCIAL", "FINAL"):
+        raise ValueError("El tipo de cierre debe ser parcial o final")
+    monto_real = _monto_caja(monto_real, "El monto contado", permitir_cero=True)
+
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        caja = _caja_abierta_conn(conn)
+        if not caja:
+            raise ValueError("No hay una caja abierta para cerrar")
+        esperado = caja["monto_esperado"]
+        diferencia = round(monto_real - esperado, 2)
+        conn.execute(
+            """
+            INSERT INTO cierres_caja
+                (caja_id, usuario_id, tipo, monto_esperado, monto_real, diferencia)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (caja["id"], usuario_id, tipo, esperado, monto_real, diferencia),
+        )
+        if tipo == "FINAL":
+            conn.execute(
+                """
+                UPDATE cajas
+                SET fecha_cierre = datetime('now', 'localtime'),
+                    monto_esperado = ?, monto_real = ?, diferencia = ?, estado = 'CERRADA'
+                WHERE id = ? AND estado = 'ABIERTA'
+                """,
+                (esperado, monto_real, diferencia, caja["id"]),
+            )
+        conn.commit()
+        return {
+            "caja_id": caja["id"],
+            "tipo": tipo,
+            "monto_esperado": esperado,
+            "monto_real": monto_real,
+            "diferencia": diferencia,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def registrar_venta(data, usuario_id=1):
     try:
         producto_id = int(data.get("producto_id"))
@@ -1229,6 +1522,22 @@ def registrar_venta(data, usuario_id=1):
             conn, producto_id, "salida", cantidad_stock,
             f"Venta de mostrador ({detalle})",
         )
+        caja = _caja_abierta_conn(conn)
+        if caja:
+            conn.execute(
+                """
+                INSERT INTO movimientos_caja
+                    (caja_id, usuario_id, tipo, concepto, monto, venta_id)
+                VALUES (?, ?, 'INGRESO', ?, ?, ?)
+                """,
+                (
+                    caja["id"],
+                    usuario_id,
+                    f"Venta #{venta_id} - {producto['nombre']}",
+                    total,
+                    venta_id,
+                ),
+            )
         conn.commit()
         return {
             "id": venta_id,

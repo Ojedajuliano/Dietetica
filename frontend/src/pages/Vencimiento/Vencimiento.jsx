@@ -7,7 +7,6 @@ const Vencimiento = () => {
   const [lotes, setLotes] = useState([]);
   const [form, setForm] = useState({
     producto_id: "",
-    codigo_lote: "",
     cantidad: "",
     fecha_vencimiento: "",
   });
@@ -50,7 +49,7 @@ const Vencimiento = () => {
         cantidad: Number(form.cantidad),
       });
       setMensaje("Lote registrado y stock actualizado.");
-      setForm({ producto_id: "", codigo_lote: "", cantidad: "", fecha_vencimiento: "" });
+      setForm({ producto_id: "", cantidad: "", fecha_vencimiento: "" });
       await cargar();
     } catch (e) {
       setError(e.message);
@@ -63,10 +62,18 @@ const Vencimiento = () => {
   hoy.setHours(0, 0, 0, 0);
   const limite = new Date(hoy);
   limite.setDate(limite.getDate() + 30);
-  const esAlerta = (fecha) => {
-    const vencimiento = new Date(`${fecha}T00:00:00`);
-    return vencimiento <= limite;
-  };
+  const fechaLote = (lote) => lote.fecha_vencimiento
+    ? new Date(`${lote.fecha_vencimiento}T00:00:00`)
+    : null;
+  const lotesVencidos = lotes.filter((lote) => {
+    const vencimiento = fechaLote(lote);
+    return vencimiento && vencimiento <= hoy;
+  });
+  const lotesPorVencer = lotes.filter((lote) => {
+    const vencimiento = fechaLote(lote);
+    return vencimiento && vencimiento > hoy && vencimiento <= limite;
+  });
+  const tieneAlertas = lotesVencidos.length > 0 || lotesPorVencer.length > 0;
 
   return (
     <div className="inventario-container">
@@ -76,6 +83,21 @@ const Vencimiento = () => {
       <div className="table-content-wrapper">
         {error && <p className="alert alert-danger">{error}</p>}
         {mensaje && <p className="alert alert-success">{mensaje}</p>}
+        {tieneAlertas && (
+          <div className={`alert ${lotesVencidos.length ? "alert-danger" : "alert-warning"}`} role="alert">
+            <strong>Alerta de vencimientos:</strong>{" "}
+            {lotesVencidos.length > 0 && `${lotesVencidos.length} lote(s) vencido(s)`}
+            {lotesVencidos.length > 0 && lotesPorVencer.length > 0 && " y "}
+            {lotesPorVencer.length > 0 && `${lotesPorVencer.length} lote(s) vencen dentro de los próximos 30 días`}.
+            <ul className="mb-0 mt-2">
+              {[...lotesVencidos, ...lotesPorVencer].map((lote) => (
+                <li key={lote.id}>
+                  {lote.producto_nombre} · Lote #{lote.id} · vence {lote.fecha_vencimiento}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <form className="card border-0 shadow-sm p-4 mb-4" onSubmit={guardar}>
           <h4 className="fw-bold mb-3">Registrar lote recibido</h4>
           <div className="row g-3 align-items-end">
@@ -90,15 +112,6 @@ const Vencimiento = () => {
                 <option value="">Seleccionar producto</option>
                 {productos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
               </select>
-            </div>
-            <div className="col-md-2">
-              <label className="form-label">Código de lote</label>
-              <input
-                className="form-control"
-                value={form.codigo_lote}
-                onChange={(e) => setForm((actual) => ({ ...actual, codigo_lote: e.target.value }))}
-                placeholder="Opcional"
-              />
             </div>
             <div className="col-md-2">
               <label className="form-label">Cantidad</label>
@@ -135,7 +148,7 @@ const Vencimiento = () => {
           <div className="d-flex justify-content-between align-items-center mb-3">
             <h4 className="fw-bold m-0">Lotes con stock</h4>
             <span className="badge bg-warning text-dark">
-              {lotes.filter((lote) => esAlerta(lote.fecha_vencimiento)).length} próximos a vencer o vencidos
+              {lotesVencidos.length + lotesPorVencer.length} próximos a vencer o vencidos
             </span>
           </div>
           <div className="table-responsive">
@@ -146,17 +159,18 @@ const Vencimiento = () => {
               <tbody>
                 {lotes.length === 0 && <tr><td colSpan="5" className="text-center text-secondary py-4">No hay lotes registrados con stock.</td></tr>}
                 {lotes.map((lote) => {
-                  const vencido = new Date(`${lote.fecha_vencimiento}T00:00:00`) <= hoy;
-                  const alerta = esAlerta(lote.fecha_vencimiento);
+                  const vencimiento = fechaLote(lote);
+                  const vencido = vencimiento && vencimiento <= hoy;
+                  const alerta = vencimiento && vencimiento > hoy && vencimiento <= limite;
                   return (
                     <tr key={lote.id}>
                       <td>{lote.producto_nombre}</td>
-                      <td>{lote.codigo_lote || `#${lote.id}`}</td>
+                      <td>#{lote.id}</td>
                       <td>{lote.fecha_vencimiento}</td>
                       <td>{lote.cantidad} {lote.tipo_venta === "peso" ? "kg" : "u"}</td>
                       <td>
                         <span className={`badge ${vencido ? "bg-danger" : alerta ? "bg-warning text-dark" : "bg-success"}`}>
-                          {vencido ? "Vencido" : alerta ? "Próximo a vencer" : "Vigente"}
+                          {vencido ? "Vencido" : alerta ? "Próximo a vencer" : vencimiento ? "Vigente" : "Sin fecha"}
                         </span>
                       </td>
                     </tr>

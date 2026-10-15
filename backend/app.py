@@ -3,17 +3,22 @@ from flask_cors import CORS
 import json
 import math
 import os
+from datetime import date
 
 from database import (
     actualizar_producto,
     actualizar_precios,
     actualizar_stock,
+    abrir_caja,
+    asociar_productos_proveedor,
+    cerrar_caja,
     crear_categoria,
     crear_marca,
     crear_producto,
     crear_usuario,
     eliminar_producto,
     estadisticas_administracion,
+    estado_caja,
     historial_movimientos,
     init_db,
     listar_actividad,
@@ -29,6 +34,7 @@ from database import (
     registrar_lote,
     registrar_movimiento,
     registrar_compra,
+    registrar_movimiento_caja,
     registrar_venta,
     registrar_actividad,
     resumen_inventario,
@@ -65,7 +71,7 @@ def es_administrador():
     return session.get("usuario", {}).get("rol") == "Administrador"
 
 
-def validar_producto(data):
+def validar_producto(data, requiere_vencimiento=False):
     if not data:
         return "No se recibieron datos"
     if not (data.get("nombre") or "").strip():
@@ -88,6 +94,13 @@ def validar_producto(data):
             return "Stock, costo, precio y niveles de stock no pueden ser negativos"
         if stock_critico and stock_minimo and stock_critico > stock_minimo:
             return "El stock crítico debe ser menor o igual al stock mínimo"
+        if requiere_vencimiento:
+            if stock <= 0:
+                return "El stock inicial debe ser mayor que cero para registrar su vencimiento"
+            try:
+                date.fromisoformat(data.get("fecha_vencimiento") or "")
+            except (TypeError, ValueError):
+                return "La fecha de vencimiento es obligatoria y debe ser válida"
     except (TypeError, ValueError):
         return "Los valores numéricos no son válidos"
     return None
@@ -259,7 +272,7 @@ def api_obtener_producto(producto_id):
 @app.route("/api/productos", methods=["POST"])
 def api_crear_producto():
     data = request.get_json(silent=True) or {}
-    error = validar_producto(data)
+    error = validar_producto(data, requiere_vencimiento=True)
     if error:
         return jsonify({"message": error}), 400
     try:
@@ -335,6 +348,93 @@ def api_eliminar_producto(producto_id):
 @app.route("/api/proveedores", methods=["GET"])
 def api_listar_proveedores():
     return jsonify(listar_proveedores())
+
+
+@app.route("/api/proveedores/asociaciones", methods=["POST"])
+def api_asociar_productos_proveedor():
+    data = request.get_json(silent=True) or {}
+    proveedor = data.get("proveedor")
+    producto_ids = data.get("producto_ids")
+    if not isinstance(proveedor, str) or not isinstance(producto_ids, list):
+        return jsonify({"message": "Indicá un proveedor y una lista de productos"}), 400
+
+    proveedor = proveedor.strip()
+    try:
+        cantidad = asociar_productos_proveedor(producto_ids, proveedor)
+    except ValueError as error:
+        return jsonify({"message": str(error)}), 400
+
+    registrar_actividad(
+        session["usuario"]["id"],
+        "Asociación de proveedor",
+        f"Se asignó el proveedor {proveedor} a {cantidad} producto(s)",
+    )
+    return jsonify({"proveedor": proveedor, "productos_actualizados": cantidad})
+
+
+@app.route("/api/caja", methods=["GET"])
+def api_estado_caja():
+    return jsonify(estado_caja())
+
+
+@app.route("/api/caja/apertura", methods=["POST"])
+def api_abrir_caja():
+    data = request.get_json(silent=True) or {}
+    try:
+        caja_id = abrir_caja(session["usuario"]["id"], data.get("monto_inicial"))
+    except ValueError as error:
+        return jsonify({"message": str(error)}), 400
+    registrar_actividad(
+        session["usuario"]["id"],
+        "Apertura de caja",
+        f"Se abrió la caja #{caja_id} con ${float(data['monto_inicial']):.2f}",
+    )
+    return jsonify({"caja_id": caja_id, "message": "Caja abierta"}), 201
+
+
+@app.route("/api/caja/movimientos", methods=["POST"])
+def api_registrar_movimiento_caja():
+    data = request.get_json(silent=True) or {}
+    try:
+        caja_id = registrar_movimiento_caja(
+            session["usuario"]["id"],
+            data.get("tipo"),
+            data.get("monto"),
+            data.get("concepto"),
+        )
+    except ValueError as error:
+        return jsonify({"message": str(error)}), 400
+    registrar_actividad(
+        session["usuario"]["id"],
+        "Movimiento de caja",
+        (
+            f"{str(data.get('tipo', '')).upper()} de ${float(data['monto']):.2f}: "
+            f"{str(data.get('concepto') or '').strip()}"
+        ),
+    )
+    return jsonify({"caja_id": caja_id, "message": "Movimiento de caja registrado"}), 201
+
+
+@app.route("/api/caja/cierres", methods=["POST"])
+def api_cerrar_caja():
+    data = request.get_json(silent=True) or {}
+    try:
+        cierre = cerrar_caja(
+            session["usuario"]["id"],
+            data.get("monto_real"),
+            data.get("tipo"),
+        )
+    except ValueError as error:
+        return jsonify({"message": str(error)}), 400
+    registrar_actividad(
+        session["usuario"]["id"],
+        f"Cierre {cierre['tipo'].lower()} de caja",
+        (
+            f"Caja #{cierre['caja_id']}: esperado ${cierre['monto_esperado']:.2f}, "
+            f"contado ${cierre['monto_real']:.2f}, diferencia ${cierre['diferencia']:.2f}"
+        ),
+    )
+    return jsonify(cierre)
 
 
 @app.route("/api/precios/actualizacion-masiva", methods=["POST"])

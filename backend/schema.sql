@@ -224,6 +224,19 @@ CREATE TABLE IF NOT EXISTS movimientos_caja (
     FOREIGN KEY (venta_id) REFERENCES ventas(id)
 );
 
+CREATE TABLE IF NOT EXISTS cierres_caja (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    caja_id INTEGER NOT NULL,
+    usuario_id INTEGER NOT NULL,
+    tipo TEXT NOT NULL, -- PARCIAL, FINAL
+    fecha TEXT NOT NULL,
+    monto_esperado REAL NOT NULL,
+    monto_real REAL NOT NULL,
+    diferencia REAL NOT NULL,
+    FOREIGN KEY (caja_id) REFERENCES cajas(id),
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+);
+
 CREATE TABLE IF NOT EXISTS movimientos_cuenta_cliente (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     cliente_id INTEGER NOT NULL,

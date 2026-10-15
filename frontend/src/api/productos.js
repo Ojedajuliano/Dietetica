@@ -92,6 +92,14 @@ export function getProveedores() {
   return apiFetch(`${API}/proveedores`).then(parseResponse);
 }
 
+export function asociarProductosProveedor(proveedor, producto_ids) {
+  return apiFetch(`${API}/proveedores/asociaciones`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ proveedor, producto_ids }),
+  }).then(parseResponse);
+}
+
 export function actualizarPrecios(payload) {
   return apiFetch(`${API}/precios/actualizacion-masiva`, {
     method: "POST",

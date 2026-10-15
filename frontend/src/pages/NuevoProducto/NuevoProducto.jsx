@@ -29,6 +29,7 @@ const NuevoProducto = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [form, setForm] = useState(VACIO);
+  const [fechaVencimientoInicial, setFechaVencimientoInicial] = useState("");
   const [categorias, setCategorias] = useState([]);
   const [marcas, setMarcas] = useState([]);
   const [nuevaCategoria, setNuevaCategoria] = useState("");
@@ -124,17 +125,22 @@ const NuevoProducto = () => {
       stock_minimo: form.stock_minimo === "" ? 0 : Number(form.stock_minimo),
       stock_critico: form.stock_critico === "" ? 0 : Number(form.stock_critico),
     };
+    if (!esEdicion) {
+      payload.fecha_vencimiento = fechaVencimientoInicial;
+    }
 
     try {
       if (esEdicion) {
         await actualizarProducto(id, payload);
         setMensaje("Producto actualizado");
+        setTimeout(() => navigate("/inventario"), 600);
       } else {
         await crearProducto(payload);
-        setMensaje("Producto guardado");
+        setMensaje("Producto y lote inicial guardados");
         setForm(VACIO);
+        setFechaVencimientoInicial("");
+        setTimeout(() => navigate("/vencimiento"), 600);
       }
-      setTimeout(() => navigate("/inventario"), 600);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -258,11 +264,12 @@ const NuevoProducto = () => {
               <input
                 name="stock"
                 type="number"
-                min="0"
+                min={esEdicion ? "0" : form.tipo_venta === "peso" ? "0.01" : "1"}
                 step={form.tipo_venta === "peso" ? "0.01" : "1"}
                 placeholder={form.tipo_venta === "peso" ? "0.00" : "0"}
                 value={form.stock}
                 onChange={onChange}
+                required={!esEdicion}
               />
             </div>
             <div className="campo-grupo">
@@ -304,6 +311,29 @@ const NuevoProducto = () => {
               />
             </div>
           </div>
+
+          {!esEdicion && (
+            <>
+              <div className="card-header">
+                <span className="icon-info">⌛</span>
+                <h3>Lote inicial y vencimiento</h3>
+              </div>
+              <p className="text-secondary mb-0">
+                El stock inicial se registrará como un lote para poder mostrar alertas de vencimiento.
+              </p>
+              <div className="campos-form">
+                <div className="campo-grupo">
+                  <label>Fecha de vencimiento</label>
+                  <input
+                    type="date"
+                    value={fechaVencimientoInicial}
+                    onChange={(e) => setFechaVencimientoInicial(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           {error && <p className="form-error">{error}</p>}
           {mensaje && <p className="form-ok">{mensaje}</p>}

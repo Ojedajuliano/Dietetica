@@ -4,12 +4,14 @@ import "./App.css";
 import { cerrarSesion, getUsuarioActual } from "./api/auth";
 import Sidebar from "./components/Sidebar/Sidebar";
 import Administracion from "./pages/Administracion/Administracion";
+import Caja from "./pages/Caja/Caja";
 import Catalogo from "./pages/Catalogo/Catalogo";
 import CompraVenta from "./pages/CompraVenta/CompraVenta";
 import Inventario from "./pages/Inventario/Inventario";
 import Movimientos from "./pages/Movimientos/Movimientos";
 import NuevoProducto from "./pages/NuevoProducto/NuevoProducto";
 import Productos from "./pages/Productos/Productos";
+import Proveedores from "./pages/Proveedores/Proveedores";
 import Vencimiento from "./pages/Vencimiento/Vencimiento";
 import Login from "./pages/Login";
 
@@ -70,6 +72,8 @@ function App() {
           <Route path="/catalogo" element={<Catalogo />} />
           <Route path="/movimientos" element={<Movimientos />} />
           <Route path="/vencimiento" element={<Vencimiento />} />
+          <Route path="/caja" element={<Caja />} />
+          <Route path="/proveedores" element={<Proveedores />} />
           <Route path="/compra-venta" element={<CompraVenta />} />
           <Route
             path="/administracion"

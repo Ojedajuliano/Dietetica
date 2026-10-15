@@ -39,6 +39,8 @@ const Sidebar = ({ usuario, onCerrarSesion }) => {
               ))}
             </div>
           </div>
+          <NavLink to="/caja">Caja</NavLink>
+          <NavLink to="/proveedores">Proveedores</NavLink>
           <NavLink to="/compra-venta">Compra Venta</NavLink>
           <NavLink to="/administracion">Administración</NavLink>
         </nav>
